@@ -1,0 +1,29 @@
+# xcodegen project for the public Magistrate iOS sample.
+#   brew install xcodegen && xcodegen generate && open MagistrateSample.xcodeproj
+name: MagistrateSample
+options:
+  bundleIdPrefix: com.octetproof
+  deploymentTarget:
+    iOS: "16.0"
+packages:
+  # The Magistrate product (bundles the policy core internally).
+  Magistrate:
+    url: https://github.com/octetproof/octet-magistrate-ios
+    exact: "0.1.0"
+  # OctetSDK, for Octet.start. Magistrate depends on this same version internally;
+  # SwiftPM doesn't re-export it, so the app declares it too (must match Magistrate's
+  # pinned OctetSDK version).
+  OctetSDK:
+    url: https://github.com/octetproof/octet-sdk-ios
+    exact: "3.1.2"
+targets:
+  MagistrateSample:
+    type: application
+    platform: iOS
+    sources: [Sources]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.octetproof.magistrate   # PUBLIC channel
+    dependencies:
+      - package: Magistrate
+      - package: OctetSDK

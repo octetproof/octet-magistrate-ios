@@ -1,0 +1,81 @@
+name: Sign release
+
+# Signs each release with keyless cosign (GitHub OIDC, no stored keys), so the signing
+# certificate names this workflow and the release tag:
+#   https://github.com/<this repository>/.github/workflows/sign-release.yml@refs/tags/<version>
+#
+# SHASUMS256.txt is checked against the release's files, then signed. The Sigstore
+# bundle SHASUMS256.txt.sigstore.json is attached to the release.
+#
+# It runs when a release is published, and can be run again for a release tag
+# (Actions > Sign release > Run workflow, "Use workflow from" the tag <version>).
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # attach the bundle to the release
+  id-token: write   # the OIDC token Fulcio certifies
+
+concurrency:
+  group: sign-release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  sign:
+    # A published release is signed only when the release publisher created it
+    # (repository variable RELEASE_PUBLISHER, the release App's bot login). A
+    # maintainer re-runs the signing by hand with workflow_dispatch on the tag.
+    if: github.event_name == 'workflow_dispatch' || (vars.RELEASE_PUBLISHER != '' && github.event.release.author.login == vars.RELEASE_PUBLISHER)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: The run must be for a release tag
+        id: tag
+        env:
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          TAG="${EVENT_TAG:-$GITHUB_REF_NAME}"
+          if ! [[ "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || [ "$GITHUB_REF" != "refs/tags/$TAG" ]; then
+            echo "::error::not a release tag run (ref $GITHUB_REF, tag $TAG)"; exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "identity=https://github.com/${GITHUB_REPOSITORY}/.github/workflows/sign-release.yml@refs/tags/${TAG}" >> "$GITHUB_OUTPUT"
+
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        with:
+          cosign-release: v2.5.2
+
+      - name: Download the release and check it against SHASUMS256.txt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir release && cd release
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --skip-existing
+          rm -f SHASUMS256.txt.sigstore.json
+          sha256sum -c SHASUMS256.txt
+          # Every release file is listed, and nothing listed is missing.
+          find . -maxdepth 1 -type f ! -name SHASUMS256.txt -printf '%f\n' | sort > ../have.txt
+          awk '{print $2}' SHASUMS256.txt | sed 's/^\*//' | sort > ../listed.txt
+          diff ../listed.txt ../have.txt
+
+      - name: Sign SHASUMS256.txt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          IDENTITY: ${{ steps.tag.outputs.identity }}
+        run: |
+          set -euo pipefail
+          cd release
+          cosign sign-blob --yes --bundle SHASUMS256.txt.sigstore.json SHASUMS256.txt
+          cosign verify-blob --bundle SHASUMS256.txt.sigstore.json \
+            --certificate-identity "$IDENTITY" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            SHASUMS256.txt
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber SHASUMS256.txt.sigstore.json
+          echo "signed SHASUMS256.txt for $TAG as $IDENTITY" >> "$GITHUB_STEP_SUMMARY"
