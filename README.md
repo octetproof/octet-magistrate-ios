@@ -23,10 +23,12 @@
 
 ## What it is
 
-Many apps have to know where a user is before they allow something: a payment from a
-sanctioned country, a game in a jurisdiction where it isn't licensed, content outside
-its rights region. A GPS reading or an IP address is easy to fake, and a yes/no that
-your app reports is only as trustworthy as the device it runs on.
+Most apps already use location, but they take the location a device reports as true.
+A GPS reading or an IP address is easy to fake. Octet proves where a device is, so your
+app can treat location as a fact. You can use it as a security factor, for example to
+accept a payment approval only from a phone at the office. You can also use it for
+compliance, for example to serve no one in a sanctioned country or to offer a game only
+where it is licensed.
 
 Magistrate answers a location policy question, such as *"Is the device in a country
 under embargo?"*, with **YES**, **NO** or **UNKNOWN**, backed by evidence instead of a
